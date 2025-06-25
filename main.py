@@ -191,7 +191,7 @@ def summarize_meeting(transcript: str) -> str:
 文字起こし結果:
 {transcript}
 """
-    
+
     system_prompt = base_system_prompt
     if custom_instructions:
         system_prompt = f"{base_system_prompt}\n\n追加の指示:\n{custom_instructions}"
@@ -242,7 +242,9 @@ def extract_tasks(transcript: str) -> list[dict[str, Any]]:
   {{
     "title": "【{{deadline}}】{{task_title}}",
     "body": "## 背景\\n- {{background_info_if_available}}\\n\\n## 担当者\\n- {{assignee_if_mentioned}}\\n\\n## やること\\n- {{task_details}}",
-    "deadline": "{{deadline_date}}"
+    "deadline": "{{deadline_date}}",
+    "assignee": "{{github_username_if_known}}",
+    "project": "{{project_name_if_known}}"
   }}
 ]
 
@@ -256,10 +258,14 @@ Issue本文の作成ルール:
 - 担当者: 担当者について話していた場合は名前のみ記載、不明な場合は空欄
 - やること: そのタスクでやるとされていたことを具体的に記載
 
+追加フィールドの設定:
+- assignee: GitHubのユーザー名が特定できる場合は記載（例: "statiolake"）、不明な場合は空文字列
+- project: プロジェクト名が指示されている場合は記載、不明な場合は空文字列
+
 文字起こし結果:
 {transcript}
 """
-    
+
     system_prompt = base_system_prompt
     if custom_instructions:
         system_prompt = f"{base_system_prompt}\n\n追加の指示:\n{custom_instructions}"
@@ -300,6 +306,8 @@ Issue本文の作成ルール:
                     "title": "【今日まで】APIのテスト完了",
                     "body": "田中さんが実装したAPIの修正に対するテストを完了させる",
                     "deadline": current_time.strftime("%Y-%m-%d"),
+                    "assignee": "",
+                    "project": "",
                 },
                 {
                     "title": "【明日まで】新機能設計書レビュー",
@@ -307,11 +315,15 @@ Issue本文の作成ルール:
                     "deadline": (
                         current_time.replace(day=current_time.day + 1)
                     ).strftime("%Y-%m-%d"),
+                    "assignee": "",
+                    "project": "",
                 },
                 {
                     "title": "【とりあえず来週金曜日まで】ダッシュボード修正",
                     "body": "マーケティングチームからの依頼でダッシュボードの修正を行う",
                     "deadline": "2024-12-27",
+                    "assignee": "",
+                    "project": "",
                 },
             ]
     except Exception as e:
@@ -336,7 +348,11 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
             clean_title = issue["title"].replace("---", "").strip()
             clean_body = issue["body"].replace("---", "").strip()
 
-            f.write(f"# {clean_title}\n")
+            # assigneeが指定されている場合はタイトルに追加
+            if issue.get("assignee"):
+                f.write(f"# {clean_title} @{issue['assignee']}\n")
+            else:
+                f.write(f"# {clean_title}\n")
             f.write(f"{clean_body}\n")
 
             # 最後のIssue以外は区切り線を追加
@@ -373,18 +389,37 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
         lines = block.split("\n")
         title = ""
         body_lines = []
+        assignee = ""
+        project = ""
 
         for line in lines:
             if line.strip().startswith("#") and not title:
                 # 最初の # 見出しをタイトルとする
-                title = line.strip().lstrip("#").strip()
+                raw_title = line.strip().lstrip("#").strip()
+
+                # @username を抽出してassigneeに設定
+                import re
+
+                username_match = re.search(r"@(\w+)", raw_title)
+                if username_match:
+                    assignee = username_match.group(1)
+                    # タイトルから @username を除去
+                    title = re.sub(r"\s*@\w+\s*", " ", raw_title).strip()
+                else:
+                    title = raw_title
+
             elif title:
                 # タイトル後の内容を本文とする
                 body_lines.append(line)
 
         if title:
             edited_issues.append(
-                {"title": title, "body": "\n".join(body_lines).strip()}
+                {
+                    "title": title,
+                    "body": "\n".join(body_lines).strip(),
+                    "assignee": assignee,
+                    "project": project,
+                }
             )
 
     return edited_issues
@@ -396,18 +431,29 @@ def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
     issue_urls = []
     for issue in issues:
         try:
+            # 基本的なコマンド引数
+            cmd = [
+                "gh",
+                "issue",
+                "create",
+                "--repo",
+                repo,
+                "--title",
+                issue["title"],
+                "--body",
+                issue["body"],
+            ]
+
+            # assigneeが指定されている場合は追加
+            if issue.get("assignee"):
+                cmd.extend(["--assignee", issue["assignee"]])
+
+            # projectが指定されている場合は追加
+            if issue.get("project"):
+                cmd.extend(["--project", issue["project"]])
+
             result = subprocess.run(
-                [
-                    "gh",
-                    "issue",
-                    "create",
-                    "--repo",
-                    repo,
-                    "--title",
-                    issue["title"],
-                    "--body",
-                    issue["body"],
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
             )
@@ -415,7 +461,17 @@ def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
             if result.returncode == 0:
                 issue_url = result.stdout.strip()
                 issue_urls.append(issue_url)
-                print(f"Issue created: {issue_url}")
+                assignee_info = (
+                    f" (assigned to @{issue['assignee']})"
+                    if issue.get("assignee")
+                    else ""
+                )
+                project_info = (
+                    f" (added to project: {issue['project']})"
+                    if issue.get("project")
+                    else ""
+                )
+                print(f"Issue created: {issue_url}{assignee_info}{project_info}")
             else:
                 print(f"Issue 作成失敗: {result.stderr}")
         except Exception as e:
