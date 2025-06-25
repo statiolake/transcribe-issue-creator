@@ -300,32 +300,7 @@ Issue本文の作成ルール:
         if json_match:
             return json.loads(json_match.group())
         else:
-            # フォールバック: デモデータを返す
-            return [
-                {
-                    "title": "【今日まで】APIのテスト完了",
-                    "body": "田中さんが実装したAPIの修正に対するテストを完了させる",
-                    "deadline": current_time.strftime("%Y-%m-%d"),
-                    "assignee": "",
-                    "project": "",
-                },
-                {
-                    "title": "【明日まで】新機能設計書レビュー",
-                    "body": "佐藤さんが作成した新機能の設計書をレビューする",
-                    "deadline": (
-                        current_time.replace(day=current_time.day + 1)
-                    ).strftime("%Y-%m-%d"),
-                    "assignee": "",
-                    "project": "",
-                },
-                {
-                    "title": "【とりあえず来週金曜日まで】ダッシュボード修正",
-                    "body": "マーケティングチームからの依頼でダッシュボードの修正を行う",
-                    "deadline": "2024-12-27",
-                    "assignee": "",
-                    "project": "",
-                },
-            ]
+            return []
     except Exception as e:
         print(f"タスク抽出エラー: {e}")
         return []
