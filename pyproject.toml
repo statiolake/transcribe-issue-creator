@@ -1,0 +1,20 @@
+[project]
+name = "transcribe-issue-creator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "amazon-transcribe>=0.6.4",
+    "boto3>=1.38.43",
+    "pyaudio>=0.2.14",
+]
+
+[dependency-groups]
+dev = [
+    "boto3-stubs>=1.38.43",
+    "mypy>=1.16.1",
+    "ruff>=0.12.0",
+    "types-pyaudio>=0.2.16.20240516",
+    "types-requests>=2.32.4.20250611",
+]

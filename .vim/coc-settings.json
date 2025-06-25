@@ -1,0 +1,9 @@
+{
+  "python.linting.mypyEnabled": true,
+  "python.linting.mypyPath": ".venv/bin/mypy",
+  "python.pythonPath": ".venv/bin/python",
+  "python.venvPath": ".venv",
+  "ruff.enable": true,
+  "ruff.nativeBinaryPath": ".venv/bin/ruff",
+  "ruff.nativeServer": true
+}
