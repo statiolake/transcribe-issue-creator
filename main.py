@@ -152,11 +152,24 @@ async def transcribe_microphone():
     return handler.get_final_transcript()
 
 
+def load_custom_instructions() -> str:
+    """カスタムインストラクションファイルを読み込む"""
+    try:
+        with open(".custom-instructions", "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        print(f"カスタムインストラクション読み込みエラー: {e}")
+        return ""
+
+
 def summarize_meeting(transcript: str) -> str:
     """Bedrock を使用して朝会の要約を生成"""
     bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
-    system_prompt = f"""
+    custom_instructions = load_custom_instructions()
+    base_system_prompt = f"""
 あなたはチーム開発の朝会議事録を作成するアシスタントです。
 現在時刻: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
@@ -176,6 +189,10 @@ def summarize_meeting(transcript: str) -> str:
 文字起こし結果:
 {transcript}
 """
+    
+    system_prompt = base_system_prompt
+    if custom_instructions:
+        system_prompt = f"{base_system_prompt}\n\n追加の指示:\n{custom_instructions}"
 
     try:
         import json
@@ -206,7 +223,8 @@ def extract_tasks(transcript: str) -> list[dict[str, Any]]:
     bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
     current_time = datetime.now()
-    system_prompt = f"""
+    custom_instructions = load_custom_instructions()
+    base_system_prompt = f"""
 あなたはチーム開発の朝会からタスクを抽出するアシスタントです。
 現在時刻: {current_time.strftime("%Y-%m-%d %H:%M:%S")}
 
@@ -239,6 +257,10 @@ Issue本文の作成ルール:
 文字起こし結果:
 {transcript}
 """
+    
+    system_prompt = base_system_prompt
+    if custom_instructions:
+        system_prompt = f"{base_system_prompt}\n\n追加の指示:\n{custom_instructions}"
 
     try:
         import json
