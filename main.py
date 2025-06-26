@@ -177,16 +177,17 @@ def summarize_meeting(transcript: str) -> str:
 
 要件:
 - 内容を箇条書きで記載し、各項目は完結した文章にする
+- 箇条書きの間は空行を入れずに詰める
 - タスク関連の内容は除外（別途Issue化するため）
 - 決定事項、進捗報告、問題点、方針変更などを具体的に記載
 - 見出しだけでなく、状況や結果も含めて記述する
 - 日本語で出力
 
 フォーマット例:
-• メンバーAの進捗状況は順調で、APIの実装が80%完了しています。
-• 新機能Xの設計方針について議論し、マイクロサービス化の方向で合意しました。
-• チーム体制の変更により、来月からフロントエンド担当者が1名増員されます。
-• パフォーマンス問題が発生しており、データベースクエリの最適化が必要です。
+- メンバーAの進捗状況は順調で、APIの実装が80%完了しています。
+- 新機能Xの設計方針について議論し、マイクロサービス化の方向で合意しました。
+- チーム体制の変更により、来月からフロントエンド担当者が1名増員されます。
+- パフォーマンス問題が発生しており、データベースクエリの最適化が必要です。
 
 文字起こし結果:
 {transcript}
@@ -201,16 +202,12 @@ def summarize_meeting(transcript: str) -> str:
 
         response = bedrock.invoke_model(
             modelId="apac.anthropic.claude-sonnet-4-20250514-v1:0",
-            body=json.dumps(
-                {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 2000,
-                    "system": system_prompt,
-                    "messages": [
-                        {"role": "user", "content": "議事録を作成してください。"}
-                    ],
-                }
-            ),
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": "議事録を作成してください。"}],
+            }),
         )
 
         response_body = json.loads(response["body"].read().decode("utf-8"))
@@ -275,19 +272,17 @@ Issue本文の作成ルール:
 
         response = bedrock.invoke_model(
             modelId="apac.anthropic.claude-sonnet-4-20250514-v1:0",
-            body=json.dumps(
-                {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 2000,
-                    "system": system_prompt,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "タスクをJSON形式で抽出してください。",
-                        }
-                    ],
-                }
-            ),
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "system": system_prompt,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "タスクをJSON形式で抽出してください。",
+                    }
+                ],
+            }),
         )
 
         response_body = json.loads(response["body"].read().decode("utf-8"))
@@ -388,14 +383,12 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 body_lines.append(line)
 
         if title:
-            edited_issues.append(
-                {
-                    "title": title,
-                    "body": "\n".join(body_lines).strip(),
-                    "assignee": assignee,
-                    "project": project,
-                }
-            )
+            edited_issues.append({
+                "title": title,
+                "body": "\n".join(body_lines).strip(),
+                "assignee": assignee,
+                "project": project,
+            })
 
     return edited_issues
 
@@ -477,60 +470,58 @@ def parse_args():
 
 async def main():
     args = parse_args()
-    print("🌟 " + "=" * 50)
+    print("=" * 60)
     print("📱 朝会議事録 & Issue作成ツール")
-    print("=" * 55)
+    print("=" * 60)
     print(f"📂 リポジトリ: {args.repo}")
-    print("─" * 55)
+    print("─" * 60)
 
     try:
         # 1. 入力取得（stdin または音声）
         transcript = await get_input_text()
 
         if not transcript.strip():
-            print("❌ 入力が空です。処理を終了します。")
+            print("❌ 入力が空です。")
             return
 
         # 2. 議事録生成
-        print("\n📝 議事録を生成中...")
+        print("📝 議事録を生成中...")
         summary = summarize_meeting(transcript)
 
+        print("✅ 生成された議事録")
+        print("─" * 60)
+        print(summary)
+        print()
+
         # 3. タスク抽出
-        print("\n🔍 タスクを抽出中...")
+        print("🔍 タスクを抽出中...")
         tasks = extract_tasks(transcript)
 
+        issue_urls = []
         if not tasks:
-            print("❌ 抽出されたタスクがありません。")
+            print("✅ 抽出されたタスクはありませんでした。")
             return
 
         # 4. Issue編集
-        print(f"\n✏️  {len(tasks)}個のIssueを編集中...")
+        print(f"✏️  {len(tasks)}個のIssueを編集中...")
         edited_issues = edit_issues_in_editor(tasks)
 
         if not edited_issues:
-            print("❌ 編集後のIssueがありません。")
+            print("✅ 編集後のIssueがありませんでした。")
             return
 
         # 5. GitHub Issue作成
-        print(f"\n🚀 {len(edited_issues)}個のIssueを作成中...")
+        print(f"🚀 {len(edited_issues)}個のIssueを作成中...")
         issue_urls = create_github_issues(edited_issues, args.repo)
 
         # 6. 結果表示
-        print("\n" + "🎉 " + "=" * 55)
-        print("✅ 処理完了")
-        print("=" * 60)
-
-        print("\n📋 朝会議事録")
-        print("─" * 40)
-        print(summary)
-
-        print(f"\n🔗 作成されたIssue ({len(issue_urls)}件)")
-        print("─" * 40)
+        print(f"✅ 作成されたIssue ({len(issue_urls)}件)")
+        print("─" * 60)
         for i, url in enumerate(issue_urls, 1):
             print(f"  {i}. {url}")
 
     except KeyboardInterrupt:
-        print("\n⚠️  処理を中断しました。")
+        print("⚠️  処理を中断しました。")
     except Exception as e:
         print(f"❌ エラーが発生しました: {e}")
 
