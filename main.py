@@ -372,11 +372,11 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 # すべての @username を抽出してassigneesに設定
                 import re
 
-                username_matches = re.findall(r"@(\w+)", raw_title)
+                username_matches = re.findall(r"@([\w-]+)", raw_title)
                 if username_matches:
                     assignees = username_matches
                     # タイトルから全ての @username を除去
-                    title = re.sub(r"\s*@\w+\s*", " ", raw_title).strip()
+                    title = re.sub(r"\s*@[\w-]+\s*", " ", raw_title).strip()
                 else:
                     title = raw_title
 
