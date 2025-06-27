@@ -238,9 +238,9 @@ def extract_tasks(transcript: str) -> list[dict[str, Any]]:
 [
   {{
     "title": "【{{deadline}}】{{task_title}}",
-    "body": "## 背景\\n- {{background_info_if_available}}\\n\\n## 担当者\\n- {{assignee_if_mentioned}}\\n\\n## やること\\n- {{task_details}}",
+    "body": "## 背景\\n- {{background_info_if_available}}\\n\\n## 担当者\\n- {{assignees_if_mentioned}}\\n\\n## やること\\n- {{task_details}}",
     "deadline": "{{deadline_date}}",
-    "assignee": "{{github_username_if_known}}",
+    "assignees": ["{{github_username1}}", "{{github_username2}}"],
     "project": "{{project_name_if_known}}"
   }}
 ]
@@ -256,7 +256,7 @@ Issue本文の作成ルール:
 - やること: そのタスクでやるとされていたことを具体的に記載
 
 追加フィールドの設定:
-- assignee: GitHubのユーザー名が特定できる場合は記載（例: "statiolake"）、不明な場合は空文字列
+- assignees: GitHubのユーザー名が特定できる場合は配列で記載（例: ["statiolake", "user2"]）、不明な場合は空配列
 - project: プロジェクト名が指示されている場合は記載、不明な場合は空文字列
 
 文字起こし結果:
@@ -318,9 +318,11 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
             clean_title = issue["title"].replace("---", "").strip()
             clean_body = issue["body"].replace("---", "").strip()
 
-            # assigneeが指定されている場合はタイトルに追加
-            if issue.get("assignee"):
-                f.write(f"# {clean_title} @{issue['assignee']}\n")
+            # assigneesが指定されている場合はタイトルに追加
+            assignees = issue.get("assignees", [])
+            if assignees:
+                assignee_mentions = " ".join([f"@{assignee}" for assignee in assignees])
+                f.write(f"# {clean_title} {assignee_mentions}\n")
             else:
                 f.write(f"# {clean_title}\n")
             f.write(f"{clean_body}\n")
@@ -359,7 +361,7 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
         lines = block.split("\n")
         title = ""
         body_lines = []
-        assignee = ""
+        assignees = []
         project = ""
 
         for line in lines:
@@ -367,13 +369,13 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 # 最初の # 見出しをタイトルとする
                 raw_title = line.strip().lstrip("#").strip()
 
-                # @username を抽出してassigneeに設定
+                # すべての @username を抽出してassigneesに設定
                 import re
 
-                username_match = re.search(r"@(\w+)", raw_title)
-                if username_match:
-                    assignee = username_match.group(1)
-                    # タイトルから @username を除去
+                username_matches = re.findall(r"@(\w+)", raw_title)
+                if username_matches:
+                    assignees = username_matches
+                    # タイトルから全ての @username を除去
                     title = re.sub(r"\s*@\w+\s*", " ", raw_title).strip()
                 else:
                     title = raw_title
@@ -386,7 +388,7 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
             edited_issues.append({
                 "title": title,
                 "body": "\n".join(body_lines).strip(),
-                "assignee": assignee,
+                "assignees": assignees,
                 "project": project,
             })
 
@@ -412,9 +414,11 @@ def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
                 issue["body"],
             ]
 
-            # assigneeが指定されている場合は追加
-            if issue.get("assignee"):
-                cmd.extend(["--assignee", issue["assignee"]])
+            # assigneesが指定されている場合は追加
+            assignees = issue.get("assignees", [])
+            if assignees:
+                for assignee in assignees:
+                    cmd.extend(["--assignee", assignee])
 
             # projectが指定されている場合は追加
             if issue.get("project"):
@@ -429,9 +433,10 @@ def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
             if result.returncode == 0:
                 issue_url = result.stdout.strip()
                 issue_urls.append(issue_url)
+                assignees = issue.get("assignees", [])
                 assignee_info = (
-                    f" (assigned to @{issue['assignee']})"
-                    if issue.get("assignee")
+                    f" (assigned to {', '.join([f'@{a}' for a in assignees])})"
+                    if assignees
                     else ""
                 )
                 project_info = (
