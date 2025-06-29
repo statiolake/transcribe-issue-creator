@@ -531,5 +531,10 @@ async def main():
         print(f"❌ エラーが発生しました: {e}")
 
 
-if __name__ == "__main__":
+def cli():
+    """Entry point for console script"""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()

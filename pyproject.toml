@@ -1,20 +1,49 @@
 [project]
 name = "transcribe-issue-creator"
 version = "0.1.0"
-description = "Add your description here"
+description = "Morning meeting transcription tool that creates GitHub Issues"
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [
+    { name = "statiolake", email = "statiolake@gmail.com" }
+]
+license = { text = "MIT" }
+keywords = ["transcription", "github", "issues", "meeting", "aws"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+    "Topic :: Software Development :: Bug Tracking",
+]
 dependencies = [
     "amazon-transcribe>=0.6.4",
     "boto3>=1.38.43",
     "pyaudio>=0.2.14",
 ]
 
-[dependency-groups]
-dev = [
+[project.scripts]
+transcribe-issue-creator = "transcribe_issue_creator.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/statiolake/transcribe-issue-creator"
+Repository = "https://github.com/statiolake/transcribe-issue-creator"
+Issues = "https://github.com/statiolake/transcribe-issue-creator/issues"
+
+[tool.uv]
+dev-dependencies = [
     "boto3-stubs>=1.38.43",
     "mypy>=1.16.1",
     "ruff>=0.12.0",
     "types-pyaudio>=0.2.16.20240516",
     "types-requests>=2.32.4.20250611",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
