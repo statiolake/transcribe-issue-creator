@@ -7,7 +7,6 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 import boto3
 from amazon_transcribe.client import TranscribeStreamingClient
@@ -27,6 +26,7 @@ except ImportError:
 @dataclass
 class Task:
     """抽出されたタスク情報"""
+
     title: str
     body: str
     deadline: str
@@ -37,12 +37,11 @@ class Task:
 @dataclass
 class Issue:
     """GitHub Issue作成用の情報"""
+
     title: str
     body: str
     assignees: list[str]
     labels: list[str]
-
-
 
 
 class TranscriptionHandler(TranscriptResultStreamHandler):
@@ -55,7 +54,7 @@ class TranscriptionHandler(TranscriptResultStreamHandler):
         for result in results:
             if not result.is_partial:
                 # 確定した文字起こし結果のみを処理
-                for alt in result.alternatives:
+                for alt in result.alternatives or []:
                     self.transcription_results.append(alt.transcript)
                     # 確定した文字列を即座に出力（スペース付きで連結）
                     print(alt.transcript + " ", end="", flush=True)
@@ -129,7 +128,7 @@ async def transcribe_microphone():
             except EOFError:
                 stop_recording.set()
                 break
-            except:
+            except Exception:
                 break
 
     try:
@@ -191,7 +190,7 @@ def load_custom_instructions() -> str:
 def build_system_prompt(base_prompt: str) -> str:
     """ベースプロンプトにカスタムインストラクションを組み合わせたシステムプロンプトを構築"""
     custom_instructions = load_custom_instructions()
-    
+
     if custom_instructions:
         return f"""{base_prompt}
 
@@ -237,12 +236,16 @@ def summarize_meeting(transcript: str) -> str:
 
         response = bedrock.invoke_model(
             modelId="apac.anthropic.claude-sonnet-4-20250514-v1:0",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 2000,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": "議事録を作成してください。"}],
-            }),
+            body=json.dumps(
+                {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 2000,
+                    "system": system_prompt,
+                    "messages": [
+                        {"role": "user", "content": "議事録を作成してください。"}
+                    ],
+                }
+            ),
         )
 
         response_body = json.loads(response["body"].read().decode("utf-8"))
@@ -304,17 +307,19 @@ Issue本文の作成ルール:
 
         response = bedrock.invoke_model(
             modelId="apac.anthropic.claude-sonnet-4-20250514-v1:0",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 2000,
-                "system": system_prompt,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "タスクをJSON形式で抽出してください。",
-                    }
-                ],
-            }),
+            body=json.dumps(
+                {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 2000,
+                    "system": system_prompt,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "タスクをJSON形式で抽出してください。",
+                        }
+                    ],
+                }
+            ),
         )
 
         response_body = json.loads(response["body"].read().decode("utf-8"))
@@ -332,7 +337,7 @@ Issue本文の作成ルール:
                     body=task["body"],
                     deadline=task["deadline"],
                     assignees=task.get("assignees", []),
-                    labels=task.get("labels", [])
+                    labels=task.get("labels", []),
                 )
                 for task in raw_tasks
             ]
@@ -362,15 +367,17 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
 
             # assigneesとlabelsをタイトルに追加
             title_parts = [clean_title]
-            
+
             if issue.assignees:
-                assignee_mentions = " ".join([f"@{assignee}" for assignee in issue.assignees])
+                assignee_mentions = " ".join(
+                    [f"@{assignee}" for assignee in issue.assignees]
+                )
                 title_parts.append(assignee_mentions)
-                
+
             if issue.labels:
                 label_mentions = " ".join([f"<[{label}]>" for label in issue.labels])
                 title_parts.append(label_mentions)
-                
+
             f.write(f"# {' '.join(title_parts)}\n")
             f.write(f"{clean_body}\n")
 
@@ -408,14 +415,14 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
         lines = block.split("\n")
         title = ""
         body_lines = []
-        assignees = []
-        labels = []
+        assignees: list[str] = []
+        labels: list[str] = []
 
         for line in lines:
             if line.strip().startswith("#") and not title:
                 # 最初の # 見出しをタイトルとする
                 raw_title = line.strip().lstrip("#").strip()
-                
+
                 # タイトルをパースして要素を抽出
                 title, assignees, labels = parse_issue_title(raw_title)
 
@@ -424,17 +431,21 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
                 body_lines.append(line)
 
         if title:
-            edited_issues.append(Issue(
-                title=title,
-                body="\n".join(body_lines).strip(),
-                assignees=assignees,
-                labels=labels,
-            ))
+            edited_issues.append(
+                Issue(
+                    title=title,
+                    body="\n".join(body_lines).strip(),
+                    assignees=assignees,
+                    labels=labels,
+                )
+            )
 
     return edited_issues
 
 
-def create_github_issues(issues: list[Issue], repo: str, project: str | None = None) -> list[str]:
+def create_github_issues(
+    issues: list[Issue], repo: str, project: str | None = None
+) -> list[str]:
     """GitHub Issues を作成"""
 
     issue_urls = []
@@ -482,16 +493,12 @@ def create_github_issues(issues: list[Issue], repo: str, project: str | None = N
                     else ""
                 )
                 label_info = (
-                    f" (labels: {', '.join(issue.labels)})"
-                    if issue.labels
-                    else ""
+                    f" (labels: {', '.join(issue.labels)})" if issue.labels else ""
                 )
-                project_info = (
-                    f" (added to project: {project})"
-                    if project
-                    else ""
+                project_info = f" (added to project: {project})" if project else ""
+                print(
+                    f"Issue created: {issue_url}{assignee_info}{label_info}{project_info}"
                 )
-                print(f"Issue created: {issue_url}{assignee_info}{label_info}{project_info}")
             else:
                 print(f"Issue 作成失敗: {result.stderr}")
         except Exception as e:
@@ -517,9 +524,7 @@ def parse_args():
     parser.add_argument(
         "--repo", required=True, help="GitHubリポジトリ (例: owner/repository)"
     )
-    parser.add_argument(
-        "--project", help="すべてのIssueに設定するデフォルトproject名"
-    )
+    parser.add_argument("--project", help="すべてのIssueに設定するデフォルトproject名")
     return parser.parse_args()
 
 
@@ -563,7 +568,7 @@ async def main():
                 title=task.title,
                 body=task.body,
                 assignees=task.assignees,
-                labels=task.labels
+                labels=task.labels,
             )
             for task in tasks
         ]

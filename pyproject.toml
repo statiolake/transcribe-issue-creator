@@ -41,6 +41,7 @@ dev-dependencies = [
     "mypy>=1.16.1",
     "pytest>=8.0.0",
     "ruff>=0.12.0",
+    "taskipy>=1.13.0",
     "types-pyaudio>=0.2.16.20240516",
     "types-requests>=2.32.4.20250611",
 ]
@@ -49,6 +50,10 @@ dev-dependencies = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+
+[tool.taskipy.tasks]
+check = "ruff check . && mypy ."
+format = "ruff format . && ruff check --fix --select I ."
 
 [build-system]
 requires = ["hatchling"]
