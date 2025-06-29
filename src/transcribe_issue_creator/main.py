@@ -14,6 +14,8 @@ from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
 from amazon_transcribe.model import TranscriptEvent
 
+from .title_parser import parse_issue_title
+
 try:
     import pyaudio
 
@@ -29,6 +31,7 @@ class Task:
     body: str
     deadline: str
     assignees: list[str]
+    labels: list[str]
 
 
 @dataclass
@@ -37,6 +40,9 @@ class Issue:
     title: str
     body: str
     assignees: list[str]
+    labels: list[str]
+
+
 
 
 class TranscriptionHandler(TranscriptResultStreamHandler):
@@ -182,11 +188,24 @@ def load_custom_instructions() -> str:
         return ""
 
 
+def build_system_prompt(base_prompt: str) -> str:
+    """ベースプロンプトにカスタムインストラクションを組み合わせたシステムプロンプトを構築"""
+    custom_instructions = load_custom_instructions()
+    
+    if custom_instructions:
+        return f"""{base_prompt}
+
+ただし、今回のこのタスクに関しては、追加の指示がありますので、以下に提示します。上記の指示と矛盾する場合は、以下の追加指示を優先してください。
+
+{custom_instructions}"""
+    else:
+        return base_prompt
+
+
 def summarize_meeting(transcript: str) -> str:
     """Bedrock を使用して朝会の要約を生成"""
     bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
-    custom_instructions = load_custom_instructions()
     base_system_prompt = f"""
 あなたはチーム開発の朝会議事録を作成するアシスタントです。
 現在時刻: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -211,9 +230,7 @@ def summarize_meeting(transcript: str) -> str:
 {transcript}
 """
 
-    system_prompt = base_system_prompt
-    if custom_instructions:
-        system_prompt = f"{base_system_prompt}\n\n追加の指示:\n{custom_instructions}"
+    system_prompt = build_system_prompt(base_system_prompt)
 
     try:
         import json
@@ -240,7 +257,6 @@ def extract_tasks(transcript: str) -> list[Task]:
     bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
     current_time = datetime.now()
-    custom_instructions = load_custom_instructions()
     base_system_prompt = f"""
 あなたはチーム開発の朝会からタスクを抽出するアシスタントです。
 現在時刻: {current_time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -258,7 +274,8 @@ def extract_tasks(transcript: str) -> list[Task]:
     "title": "【{{deadline}}】{{task_title}}",
     "body": "## 背景\\n- {{background_info_if_available}}\\n\\n## 担当者\\n- {{assignees_if_mentioned}}\\n\\n## やること\\n- {{task_details}}",
     "deadline": "{{deadline_date}}",
-    "assignees": ["{{github_username1}}", "{{github_username2}}"]
+    "assignees": ["{{github_username1}}", "{{github_username2}}"],
+    "labels": ["{{label1}}", "{{label2}}"]
   }}
 ]
 
@@ -274,14 +291,13 @@ Issue本文の作成ルール:
 
 追加フィールドの設定:
 - assignees: GitHubのユーザー名が特定できる場合は配列で記載（例: ["statiolake", "user2"]）、不明な場合は空配列
+- labels: 特別な指示がない限り空配列を指定してください
 
 文字起こし結果:
 {transcript}
 """
 
-    system_prompt = base_system_prompt
-    if custom_instructions:
-        system_prompt = f"{base_system_prompt}\n\n追加の指示:\n{custom_instructions}"
+    system_prompt = build_system_prompt(base_system_prompt)
 
     try:
         import json
@@ -315,7 +331,8 @@ Issue本文の作成ルール:
                     title=task["title"],
                     body=task["body"],
                     deadline=task["deadline"],
-                    assignees=task.get("assignees", [])
+                    assignees=task.get("assignees", []),
+                    labels=task.get("labels", [])
                 )
                 for task in raw_tasks
             ]
@@ -343,12 +360,18 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
             clean_title = issue.title.replace("---", "").strip()
             clean_body = issue.body.replace("---", "").strip()
 
-            # assigneesが指定されている場合はタイトルに追加
+            # assigneesとlabelsをタイトルに追加
+            title_parts = [clean_title]
+            
             if issue.assignees:
                 assignee_mentions = " ".join([f"@{assignee}" for assignee in issue.assignees])
-                f.write(f"# {clean_title} {assignee_mentions}\n")
-            else:
-                f.write(f"# {clean_title}\n")
+                title_parts.append(assignee_mentions)
+                
+            if issue.labels:
+                label_mentions = " ".join([f"<[{label}]>" for label in issue.labels])
+                title_parts.append(label_mentions)
+                
+            f.write(f"# {' '.join(title_parts)}\n")
             f.write(f"{clean_body}\n")
 
             # 最後のIssue以外は区切り線を追加
@@ -386,22 +409,15 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
         title = ""
         body_lines = []
         assignees = []
+        labels = []
 
         for line in lines:
             if line.strip().startswith("#") and not title:
                 # 最初の # 見出しをタイトルとする
                 raw_title = line.strip().lstrip("#").strip()
-
-                # すべての @username を抽出してassigneesに設定
-                import re
-
-                username_matches = re.findall(r"@([\w-]+)", raw_title)
-                if username_matches:
-                    assignees = username_matches
-                    # タイトルから全ての @username を除去
-                    title = re.sub(r"\s*@[\w-]+\s*", " ", raw_title).strip()
-                else:
-                    title = raw_title
+                
+                # タイトルをパースして要素を抽出
+                title, assignees, labels = parse_issue_title(raw_title)
 
             elif title:
                 # タイトル後の内容を本文とする
@@ -412,6 +428,7 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
                 title=title,
                 body="\n".join(body_lines).strip(),
                 assignees=assignees,
+                labels=labels,
             ))
 
     return edited_issues
@@ -441,6 +458,11 @@ def create_github_issues(issues: list[Issue], repo: str, project: str | None = N
                 for assignee in issue.assignees:
                     cmd.extend(["--assignee", assignee])
 
+            # labelsが指定されている場合は追加
+            if issue.labels:
+                for label in issue.labels:
+                    cmd.extend(["--label", label])
+
             # projectが指定されている場合は追加
             if project:
                 cmd.extend(["--project", project])
@@ -459,12 +481,17 @@ def create_github_issues(issues: list[Issue], repo: str, project: str | None = N
                     if issue.assignees
                     else ""
                 )
+                label_info = (
+                    f" (labels: {', '.join(issue.labels)})"
+                    if issue.labels
+                    else ""
+                )
                 project_info = (
                     f" (added to project: {project})"
                     if project
                     else ""
                 )
-                print(f"Issue created: {issue_url}{assignee_info}{project_info}")
+                print(f"Issue created: {issue_url}{assignee_info}{label_info}{project_info}")
             else:
                 print(f"Issue 作成失敗: {result.stderr}")
         except Exception as e:
@@ -535,7 +562,8 @@ async def main():
             Issue(
                 title=task.title,
                 body=task.body,
-                assignees=task.assignees
+                assignees=task.assignees,
+                labels=task.labels
             )
             for task in tasks
         ]
