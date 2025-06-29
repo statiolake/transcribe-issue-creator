@@ -424,7 +424,10 @@ def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
                 raw_title = line.strip().lstrip("#").strip()
 
                 # タイトルをパースして要素を抽出
-                title, assignees, labels = parse_issue_title(raw_title)
+                parsed_title = parse_issue_title(raw_title)
+                title = parsed_title.title
+                assignees = parsed_title.assignees
+                labels = parsed_title.labels
 
             elif title:
                 # タイトル後の内容を本文とする

@@ -1,23 +1,35 @@
 """Title parsing utilities for GitHub Issues"""
 
 import re
+from dataclasses import dataclass
 
 
-def parse_issue_title(raw_title: str) -> tuple[str, list[str], list[str]]:
-    """タイトルからアサイニーとラベルを抽出し、クリーンなタイトルを返す
+@dataclass
+class IssueTitle:
+    """パースされたIssueタイトルの情報"""
+
+    title: str
+    assignees: list[str]
+    labels: list[str]
+
+
+def parse_issue_title(raw_title: str) -> IssueTitle:
+    """タイトルからアサイニーとラベルを抽出し、パースされたタイトル情報を返す
 
     Args:
         raw_title: パース対象の生タイトル
 
     Returns:
-        tuple[str, list[str], list[str]]: (clean_title, assignees, labels)
+        IssueTitle: パースされたタイトル情報
 
     Examples:
-        >>> parse_issue_title("【5/23 まで】佐藤さんからの問い合わせ対応 @dev-tanaka @sato-gh <[問い合わせ対応]> <[重要度高]>")
-        ("【5/23 まで】佐藤さんからの問い合わせ対応", ["dev-tanaka", "sato-gh"], ["問い合わせ対応", "重要度高"])
-
-        >>> parse_issue_title("@dev-tanaka 【5/23 まで】佐藤さんからの問い合わせ対応 <[問い合わせ対応]> @sato-gh <[重要度高]>")
-        ("【5/23 まで】佐藤さんからの問い合わせ対応", ["dev-tanaka", "sato-gh"], ["問い合わせ対応", "重要度高"])
+        >>> result = parse_issue_title("【5/23 まで】佐藤さんからの問い合わせ対応 @dev-tanaka @sato-gh <[問い合わせ対応]> <[重要度高]>")
+        >>> result.title
+        "【5/23 まで】佐藤さんからの問い合わせ対応"
+        >>> result.assignees
+        ["dev-tanaka", "sato-gh"]
+        >>> result.labels
+        ["問い合わせ対応", "重要度高"]
     """
     # @username を抽出
     assignee_matches = re.findall(r"@([\w-]+)", raw_title)
@@ -34,4 +46,8 @@ def parse_issue_title(raw_title: str) -> tuple[str, list[str], list[str]]:
     # 余分な空白を除去
     clean_title = re.sub(r"\s+", " ", clean_title).strip()
 
-    return clean_title, assignee_matches, label_matches
+    return IssueTitle(
+        title=clean_title,
+        assignees=assignee_matches,
+        labels=label_matches,
+    )
