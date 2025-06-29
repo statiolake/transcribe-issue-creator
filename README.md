@@ -1,174 +1,200 @@
 # Transcribe Issue Creator
 
-Morning meeting transcription tool that automatically creates meeting minutes and generates GitHub Issues.
+朝会の文字起こしから議事録を自動生成し、GitHub の Issue を作成するツールです。
 
-## Features
+## 機能
 
-- 🎤 **Voice Transcription**: Real-time speech recognition using Amazon Transcribe
-- 📝 **Automatic Minutes**: AI-powered meeting minutes generation using Claude
-- 📋 **Task Extraction**: Automatic task extraction from conversations for Issue creation
-- ✏️ **Issue Editing**: Edit Issues in your editor before creation
-- 👥 **Assignment**: Auto-detect or manually specify assignees
-- 📊 **Project Integration**: Automatic addition to GitHub projects
-- ⚙️ **Custom Instructions**: Customize AI behavior with `.custom-instructions` file
+- 🎤 **音声文字起こし**: Amazon Transcribe を使用したリアルタイム音声認識
+- 📝 **議事録自動生成**: Claude を使用した AI 議事録生成
+- 📋 **タスク抽出**: 会話から Issue 作成用のタスクを自動抽出
+- ✏️ **Issue 編集**: 作成前にエディタで Issue を編集可能
+- 👥 **担当者指定**: 自動検出または手動で担当者を指定
+- 📊 **プロジェクト連携**: GitHub プロジェクトへの自動追加
+- ⚙️ **カスタム指示**: `.custom-instructions` ファイルで AI の動作をカスタマイズ
 
-## Prerequisites
+## 必要な環境
 
-- Python 3.10 or higher  
-- [GitHub CLI](https://cli.github.com/) installed and authenticated
-- AWS account with Bedrock and Amazon Transcribe access
-- `pyaudio` for voice input (optional)
+- Python 3.10 以上
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) のインストール
+- [GitHub CLI](https://cli.github.com/) のインストールと認証
+- AWS Bedrock、Amazon Transcribe が使える AWS アカウントへのアクセス権限
+- **portaudio** (pyaudio の依存関係のため必須):
+  - macOS: `brew install portaudio`
+  - Ubuntu/Debian: `sudo apt install portaudio19-dev`
+  - Windows: 通常は追加設定が不要
+  - WSL: `sudo apt install portaudio19-dev` (ただし、マイクアクセスは困難)
+- タスク化した Issue を保存する GitHub のリポジトリ
+  - 実行時に --repo オプションで指定します。
 
-## Installation
+## インストールと実行方法
 
-```bash
-# Clone the project
-git clone <repository-url>
-cd transcribe-issue-creator
+### オプション 1: uvx で直接実行
 
-# Install dependencies
-uv sync
-
-# For voice input (optional)
-uv add pyaudio
-```
-
-## Usage
-
-### Basic Usage
+インストール不要で GitHub から直接実行できます。
 
 ```bash
-# Microphone input
-python main.py --repo owner/repository
+# 環境変数を設定
+export AWS_PROFILE=your-profile-name
+export AWS_DEFAULT_REGION=ap-northeast-1
 
-# Text file input
-cat meeting_notes.txt | python main.py --repo owner/repository
+# GitHub から直接実行
+# マイクロフォンから音声入力
+uvx --from git+https://github.com/statiolake/transcribe-issue-creator transcribe-issue-creator --repo owner/repository
 
-# Direct stdin input
-echo "Meeting content..." | python main.py --repo owner/repository
+# テキストファイルから入力 (すでに別で文字起こしをした場合や WSL 利用時など)
+cat meeting_notes.txt | uvx --from git+https://github.com/statiolake/transcribe-issue-creator transcribe-issue-creator --repo owner/repository
 ```
 
-### Voice Input Controls
+### オプション 2: uv tool でインストール
 
-1. Run the program to start voice input
-2. Spoken content is transcribed in real-time
-3. Press `Ctrl+D` to stop recording
+グローバルにインストールして普通のコマンドのように実行できます。繰り返し使う場合はこうしてしまっても便利です。
 
-### Issue Editing
+```bash
+# インストール
+uv tool install git+https://github.com/statiolake/transcribe-issue-creator
 
-Extracted tasks automatically open in your editor (default: nvim):
+# 環境変数を設定
+export AWS_PROFILE=your-profile-name
+export AWS_DEFAULT_REGION=ap-northeast-1
+
+# 実行
+# マイクロフォンから音声入力
+transcribe-issue-creator --repo owner/repository
+
+# テキストファイルから入力 (すでに別で文字起こしをした場合や WSL 利用時など)
+cat meeting_notes.txt | transcribe-issue-creator --repo owner/repository
+```
+
+## ツールの動作の流れ
+
+### 音声入力
+
+標準入力から文字列が渡されなかった場合は、音声入力モードが開始します。
+マイクからの音声をリアルタイムで文字起こしします。
+
+1. プログラムを実行すると音声入力が開始されます。
+2. 話した内容がリアルタイムで文字起こしされます。
+3. `Ctrl+D` を押して録音を終了します。
+
+### Issue の編集
+
+標準入力または文字起こしの内容をもとに、AI が議事録を生成し、タスク化すべき内容を抽出します。
+抽出されたタスクは自動的にエディタで開かれ、登録前に編集することができます。
 
 ```markdown
-# [Today] Complete API testing @statiolake
+# 【今日まで】API テストの完了 @statiolake
 
-## Background
-- About Tanaka-san's API implementation
+## 背景
 
-## Assignee
+- 田中さんの API 実装について
+
+## 担当者
+
 - statiolake
 
-## Tasks
-- Complete testing for API modifications
+## やること
+
+- API 修正のテストを完了する
 
 ---
 
-# [Tomorrow] Review new feature design
+# 【明日まで】新機能設計のレビュー
 
-## Background
-- About new feature design
+## 背景
 
-## Tasks
-- Review design document
+- 新機能の設計について
+
+## やること
+
+- 設計書をレビューする
 ```
 
-#### Editor Usage
+#### エディタでの編集方法
 
-- **Delete Issues**: Remove entire Issue blocks you don't need
-- **Assign Users**: Add `@username` to title end (e.g., `@statiolake`)
-- **Edit Content**: Freely modify titles and content
-- **Separators**: Issues are separated by `---`
+- **Issue の削除**: 不要な Issue があれば、全体を削除してしまえば登録されることはありません。逆に拾われなかったタスクを追加することもできます。
+- **担当者指定**: タイトル末尾に `@ユーザー名` を追加すると GitHub の Assignee として扱われます (例: `@statiolake`) 。
+- **内容編集**: タイトルや本文を自由に修正できます。
+- **区切り**: Issue は `---` で区切られます。
 
-## Custom Instructions
+## カスタム指示
 
-Create a `.custom-instructions` file to customize AI behavior:
+`.custom-instructions` ファイルを作成して AI の動作をカスタマイズできます。
+特に、チームのメンバーやプロジェクト名はここで指定するとよいです。
 
 ```
-# Example .custom-instructions
-- Team members: @alice (Frontend), @bob (Backend), @charlie (Infrastructure)
-- Project name: "Sprint 2024-Q1"
-- Deadline format: Add "tentatively" for internal tasks
-- Always add priority labels when creating Issues
+# .custom-instructions の例
+- チームメンバー: @alice (フロントエンド)、@bob (バックエンド)、@charlie (インフラ)
+- プロジェクト名: "Sprint 2024-Q1"
+- 締切形式: 社内タスクには「とりあえず」を付ける
+- Issue 作成時は必ず優先度ラベルを追加する
 ```
 
-This content is automatically added to AI prompts for better Issue generation.
+この内容は自動的に AI プロンプトに追加され、より適切な Issue 生成が行われます。
 
-## Environment Variables
+## 環境変数
 
 ```bash
-# Editor specification (default: nvim)
-export EDITOR=vim
-
-# AWS configuration
+# AWS 設定 (必須)
+export AWS_PROFILE=your-profile-name
 export AWS_DEFAULT_REGION=ap-northeast-1
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
+
+# エディタの指定 (オプショナル)
+# デフォルトでは nvim です。
+# 例: VS Code を利用する場合
+export EDITOR="code -w"
 ```
 
-## Output Examples
+## 出力例
 
-### Meeting Minutes (for Slack)
+### 議事録 (Slack 用)
 
 ```
-• Member A's progress is going well, with API implementation 80% complete.
-• Discussed new feature X design direction and agreed on microservices approach.
-• Performance issues occurred, requiring database query optimization.
+- メンバー A の進捗は順調で、API の実装が 80% 完了している
+- 新機能 X の設計方針について議論し、マイクロサービス化で合意
+- パフォーマンス問題が発生しており、データベースクエリの最適化が必要
 ```
 
 ### GitHub Issues
 
-Created Issues automatically include:
+作成される Issue には以下が自動的に含まれます:
 
-- **Title**: Clear title with deadline
-- **Body**: Structured content (Background, Assignee, Tasks)
-- **Assignment**: Specified assignees
-- **Project**: Automatic addition to specified projects
+- **タイトル**: 締切付きの明確なタイトル
+- **本文**: 構造化された内容 (背景、担当者、やること)
+- **担当者**: 指定された担当者
+- **プロジェクト**: 指定されたプロジェクトへの自動追加
 
-## Troubleshooting
+## トラブルシューティング
 
-### When pyaudio is unavailable
+### WSL 環境での音声入力について
 
-```bash
-# Use text input instead
-echo "Meeting content here" | python main.py --repo owner/repo
-```
+WSL ではマイクアクセスが困難です。Windows 側に pulseaudio サーバーをインストールし、TCP 経由で接続するように Windows / WSL 双方の pulseaudio を設定する必要があります。
+設定が複雑なため、基本的には Windows ネイティブまたは別の文字起こし (Notion 等) を利用したうえで標準入力からテキストを渡す方法を推奨します。
 
-### GitHub CLI authentication error
+## 開発環境セットアップ
 
-```bash
-# Authenticate GitHub CLI
-gh auth login
-```
-
-### AWS authentication error
+開発者向けの詳細なセットアップ手順:
 
 ```bash
-# Configure AWS CLI
-aws configure
-```
+# プロジェクトをクローン
+git clone https://github.com/statiolake/transcribe-issue-creator
+cd transcribe-issue-creator
 
-## Development
+# 依存関係をインストール
+uv sync
 
-```bash
-# Install development dependencies
+# 開発用依存関係もインストール
 uv sync --group dev
 
-# Type checking
-mypy main.py
+# 開発モードで実行
+uv run python src/transcribe_issue_creator/main.py --repo owner/repository
 
-# Linting
-ruff check main.py
+# 型チェック
+uv run mypy src/transcribe_issue_creator/
+
+# リンティング
+uv run ruff check src/transcribe_issue_creator/
 ```
 
-## License
+## ライセンス
 
-This project is published under the [MIT License](LICENSE).
+このプロジェクトは [MIT ライセンス](LICENSE) の下で公開されています。
