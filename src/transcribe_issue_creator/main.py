@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import boto3
+import requests
 from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
 from amazon_transcribe.model import TranscriptEvent
@@ -510,6 +511,99 @@ def create_github_issues(
     return issue_urls
 
 
+def post_to_slack(webhook_url: str, summary: str, issue_urls: list[str]) -> bool:
+    """Slack にBlock Kitを使って議事録とIssue一覧を投稿"""
+    try:
+        # 議事録セクション
+        blocks: list[dict] = [  # type: ignore
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "📝 朝会議事録", "emoji": True},
+            },
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"```{summary}```"}},
+        ]
+
+        # Issue一覧セクション
+        if issue_urls:
+            blocks.append({"type": "divider"})
+            blocks.append(
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "🚀 作成されたIssue",
+                        "emoji": True,
+                    },
+                }
+            )
+
+            # Issue URLsをリスト形式で表示
+            issue_list = []
+            for i, url in enumerate(issue_urls, 1):
+                # URLからIssue番号を抽出
+                issue_number = url.split("/")[-1] if "/" in url else str(i)
+                issue_list.append(f"• <{url}|Issue #{issue_number}>")
+
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": "\n".join(issue_list)},
+                }
+            )
+
+            # 統計情報
+            blocks.append(
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"📊 合計 {len(issue_urls)} 件のIssueを作成しました",
+                        }
+                    ],
+                }
+            )
+        else:
+            blocks.append({"type": "divider"})
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "ℹ️ 今回は新しいIssueは作成されませんでした",
+                    },
+                }
+            )
+
+        # フッター
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"🤖 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} に自動生成",
+                    }
+                ],
+            }
+        )
+
+        payload = {"blocks": blocks, "unfurl_links": False, "unfurl_media": False}
+
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        response.raise_for_status()
+
+        print("✅ Slack に投稿しました")
+        return True
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Slack投稿エラー: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Slack投稿で予期しないエラー: {e}")
+        return False
+
+
 def parse_args():
     """コマンドライン引数を解析"""
     parser = argparse.ArgumentParser(
@@ -528,6 +622,10 @@ def parse_args():
         "--repo", required=True, help="GitHubリポジトリ (例: owner/repository)"
     )
     parser.add_argument("--project", help="すべてのIssueに設定するデフォルトproject名")
+    parser.add_argument(
+        "--slack-incoming-webhook",
+        help="議事録とIssueをSlackに投稿するためのIncoming Webhook URL",
+    )
     return parser.parse_args()
 
 
@@ -563,6 +661,9 @@ async def main():
         issue_urls = []
         if not tasks:
             print("✅ 抽出されたタスクはありませんでした。")
+            # Slackに議事録のみ投稿
+            if args.slack_incoming_webhook:
+                post_to_slack(args.slack_incoming_webhook, summary, [])
             return
 
         # TaskをIssueに変換
@@ -582,6 +683,9 @@ async def main():
 
         if not edited_issues:
             print("✅ 編集後のIssueがありませんでした。")
+            # Slackに議事録のみ投稿
+            if args.slack_incoming_webhook:
+                post_to_slack(args.slack_incoming_webhook, summary, [])
             return
 
         # 5. GitHub Issue作成
@@ -593,6 +697,11 @@ async def main():
         print("─" * 60)
         for i, url in enumerate(issue_urls, 1):
             print(f"  {i}. {url}")
+
+        # 7. Slack投稿
+        if args.slack_incoming_webhook:
+            print("📤 Slack に投稿中...")
+            post_to_slack(args.slack_incoming_webhook, summary, issue_urls)
 
     except KeyboardInterrupt:
         print("⚠️  処理を中断しました。")

@@ -25,6 +25,7 @@ dependencies = [
     "amazon-transcribe>=0.6.4",
     "boto3>=1.38.43",
     "pyaudio>=0.2.14",
+    "requests>=2.32.0",
 ]
 
 [project.scripts]
