@@ -41,8 +41,11 @@ export AWS_DEFAULT_REGION=ap-northeast-1
 # マイクロフォンから音声入力
 uvx --from git+https://github.com/statiolake/transcribe-issue-creator transcribe-issue-creator --repo owner/repository
 
+# プロジェクトを指定してすべてのIssueを同じプロジェクトに紐づけ
+uvx --from git+https://github.com/statiolake/transcribe-issue-creator transcribe-issue-creator --repo owner/repository --project "Sprint 2024-Q1"
+
 # テキストファイルから入力 (すでに別で文字起こしをした場合や WSL 利用時など)
-cat meeting_notes.txt | uvx --from git+https://github.com/statiolake/transcribe-issue-creator transcribe-issue-creator --repo owner/repository
+cat meeting_notes.txt | uvx --from git+https://github.com/statiolake/transcribe-issue-creator transcribe-issue-creator --repo owner/repository --project "Sprint 2024-Q1"
 ```
 
 ### オプション 2: uv tool でインストール
@@ -61,11 +64,19 @@ export AWS_DEFAULT_REGION=ap-northeast-1
 # マイクロフォンから音声入力
 transcribe-issue-creator --repo owner/repository
 
+# プロジェクトを指定してすべてのIssueを同じプロジェクトに紐づけ
+transcribe-issue-creator --repo owner/repository --project "Sprint 2024-Q1"
+
 # テキストファイルから入力 (すでに別で文字起こしをした場合や WSL 利用時など)
-cat meeting_notes.txt | transcribe-issue-creator --repo owner/repository
+cat meeting_notes.txt | transcribe-issue-creator --repo owner/repository --project "Sprint 2024-Q1"
 ```
 
 ## ツールの動作の流れ
+
+### コマンドライン引数
+
+- `--repo <owner/repository>` (必須): タスクを保存する GitHub リポジトリを指定します。
+- `--project <project-name>`: 作成する Issue を指定のプロジェクトに紐づけます。指定がなければプロジェクトには追加しません。
 
 ### 音声入力
 
@@ -187,6 +198,9 @@ uv sync --group dev
 
 # 開発モードで実行
 uv run python src/transcribe_issue_creator/main.py --repo owner/repository
+
+# プロジェクトを指定して実行
+uv run python src/transcribe_issue_creator/main.py --repo owner/repository --project "Sprint 2024-Q1"
 
 # 型チェック
 uv run mypy src/transcribe_issue_creator/

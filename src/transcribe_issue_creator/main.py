@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -19,6 +20,23 @@ try:
     PYAUDIO_AVAILABLE = True
 except ImportError:
     PYAUDIO_AVAILABLE = False
+
+
+@dataclass
+class Task:
+    """抽出されたタスク情報"""
+    title: str
+    body: str
+    deadline: str
+    assignees: list[str]
+
+
+@dataclass
+class Issue:
+    """GitHub Issue作成用の情報"""
+    title: str
+    body: str
+    assignees: list[str]
 
 
 class TranscriptionHandler(TranscriptResultStreamHandler):
@@ -217,7 +235,7 @@ def summarize_meeting(transcript: str) -> str:
         return f"要約生成に失敗しました。元の文字起こし:\n{transcript}"
 
 
-def extract_tasks(transcript: str) -> list[dict[str, Any]]:
+def extract_tasks(transcript: str) -> list[Task]:
     """Bedrock を使用してタスクを抽出"""
     bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
@@ -240,8 +258,7 @@ def extract_tasks(transcript: str) -> list[dict[str, Any]]:
     "title": "【{{deadline}}】{{task_title}}",
     "body": "## 背景\\n- {{background_info_if_available}}\\n\\n## 担当者\\n- {{assignees_if_mentioned}}\\n\\n## やること\\n- {{task_details}}",
     "deadline": "{{deadline_date}}",
-    "assignees": ["{{github_username1}}", "{{github_username2}}"],
-    "project": "{{project_name_if_known}}"
+    "assignees": ["{{github_username1}}", "{{github_username2}}"]
   }}
 ]
 
@@ -257,7 +274,6 @@ Issue本文の作成ルール:
 
 追加フィールドの設定:
 - assignees: GitHubのユーザー名が特定できる場合は配列で記載（例: ["statiolake", "user2"]）、不明な場合は空配列
-- project: プロジェクト名が指示されている場合は記載、不明な場合は空文字列
 
 文字起こし結果:
 {transcript}
@@ -293,7 +309,16 @@ Issue本文の作成ルール:
 
         json_match = re.search(r"\[.*\]", result_text, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group())
+            raw_tasks = json.loads(json_match.group())
+            return [
+                Task(
+                    title=task["title"],
+                    body=task["body"],
+                    deadline=task["deadline"],
+                    assignees=task.get("assignees", [])
+                )
+                for task in raw_tasks
+            ]
         else:
             return []
     except Exception as e:
@@ -301,7 +326,7 @@ Issue本文の作成ルール:
         return []
 
 
-def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def edit_issues_in_editor(issues: list[Issue]) -> list[Issue]:
     """エディタでIssueの編集"""
     editor = os.environ.get("EDITOR", "nvim")
 
@@ -315,13 +340,12 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         for i, issue in enumerate(issues):
             # AI生成内容から既存の --- を除去
-            clean_title = issue["title"].replace("---", "").strip()
-            clean_body = issue["body"].replace("---", "").strip()
+            clean_title = issue.title.replace("---", "").strip()
+            clean_body = issue.body.replace("---", "").strip()
 
             # assigneesが指定されている場合はタイトルに追加
-            assignees = issue.get("assignees", [])
-            if assignees:
-                assignee_mentions = " ".join([f"@{assignee}" for assignee in assignees])
+            if issue.assignees:
+                assignee_mentions = " ".join([f"@{assignee}" for assignee in issue.assignees])
                 f.write(f"# {clean_title} {assignee_mentions}\n")
             else:
                 f.write(f"# {clean_title}\n")
@@ -362,7 +386,6 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
         title = ""
         body_lines = []
         assignees = []
-        project = ""
 
         for line in lines:
             if line.strip().startswith("#") and not title:
@@ -385,17 +408,16 @@ def edit_issues_in_editor(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 body_lines.append(line)
 
         if title:
-            edited_issues.append({
-                "title": title,
-                "body": "\n".join(body_lines).strip(),
-                "assignees": assignees,
-                "project": project,
-            })
+            edited_issues.append(Issue(
+                title=title,
+                body="\n".join(body_lines).strip(),
+                assignees=assignees,
+            ))
 
     return edited_issues
 
 
-def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
+def create_github_issues(issues: list[Issue], repo: str, project: str | None = None) -> list[str]:
     """GitHub Issues を作成"""
 
     issue_urls = []
@@ -409,20 +431,19 @@ def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
                 "--repo",
                 repo,
                 "--title",
-                issue["title"],
+                issue.title,
                 "--body",
-                issue["body"],
+                issue.body,
             ]
 
             # assigneesが指定されている場合は追加
-            assignees = issue.get("assignees", [])
-            if assignees:
-                for assignee in assignees:
+            if issue.assignees:
+                for assignee in issue.assignees:
                     cmd.extend(["--assignee", assignee])
 
             # projectが指定されている場合は追加
-            if issue.get("project"):
-                cmd.extend(["--project", issue["project"]])
+            if project:
+                cmd.extend(["--project", project])
 
             result = subprocess.run(
                 cmd,
@@ -433,15 +454,14 @@ def create_github_issues(issues: list[dict[str, Any]], repo: str) -> list[str]:
             if result.returncode == 0:
                 issue_url = result.stdout.strip()
                 issue_urls.append(issue_url)
-                assignees = issue.get("assignees", [])
                 assignee_info = (
-                    f" (assigned to {', '.join([f'@{a}' for a in assignees])})"
-                    if assignees
+                    f" (assigned to {', '.join([f'@{a}' for a in issue.assignees])})"
+                    if issue.assignees
                     else ""
                 )
                 project_info = (
-                    f" (added to project: {issue['project']})"
-                    if issue.get("project")
+                    f" (added to project: {project})"
+                    if project
                     else ""
                 )
                 print(f"Issue created: {issue_url}{assignee_info}{project_info}")
@@ -469,6 +489,9 @@ def parse_args():
     )
     parser.add_argument(
         "--repo", required=True, help="GitHubリポジトリ (例: owner/repository)"
+    )
+    parser.add_argument(
+        "--project", help="すべてのIssueに設定するデフォルトproject名"
     )
     return parser.parse_args()
 
@@ -507,9 +530,19 @@ async def main():
             print("✅ 抽出されたタスクはありませんでした。")
             return
 
+        # TaskをIssueに変換
+        issues = [
+            Issue(
+                title=task.title,
+                body=task.body,
+                assignees=task.assignees
+            )
+            for task in tasks
+        ]
+
         # 4. Issue編集
-        print(f"✏️  {len(tasks)}個のIssueを編集中...")
-        edited_issues = edit_issues_in_editor(tasks)
+        print(f"✏️  {len(issues)}個のIssueを編集中...")
+        edited_issues = edit_issues_in_editor(issues)
 
         if not edited_issues:
             print("✅ 編集後のIssueがありませんでした。")
@@ -517,7 +550,7 @@ async def main():
 
         # 5. GitHub Issue作成
         print(f"🚀 {len(edited_issues)}個のIssueを作成中...")
-        issue_urls = create_github_issues(edited_issues, args.repo)
+        issue_urls = create_github_issues(edited_issues, args.repo, args.project)
 
         # 6. 結果表示
         print(f"✅ 作成されたIssue ({len(issue_urls)}件)")
